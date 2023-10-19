@@ -1,4 +1,4 @@
-package CODE.MAIN;
+package Main;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -135,7 +135,7 @@ public class DiskManager {
         }
     }
     
-    private boolean isPageAllocated(PageId pageId) {
+    public boolean isPageAllocated(PageId pageId) {
         // Générer le nom du fichier à partir de l'index du fichier
         String fileName = DBParams.DBPath + "/file" + pageId.getFileIdx();
     

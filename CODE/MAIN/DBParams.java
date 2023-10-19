@@ -1,4 +1,4 @@
-package CODE.MAIN;
+package Main;
 
 public class DBParams {
     public static String DBPath;
