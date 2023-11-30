@@ -1,151 +1,140 @@
 package Main;
 
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.util.Random;
 import java.util.Stack;
 import java.io.File;
-
+import java.io.IOException;
+import java.io.RandomAccessFile;
 
 public class DiskManager {
-    private static DiskManager instance;
-    private final String fileName;
-    private final int pageSize;
-    private int CompteurPageAlloue;
-    private Stack<PageId> PagesDesallouees; // Pile pour gérer les pages désallouées
-    private File[] dataFiles; // Tableau de fichiers de données
+    private static DiskManager instance = new DiskManager();
 
+    public DiskManager() {
 
-    public DiskManager(String fileName, int pageSize) {
-        this.fileName = fileName;
-        this.pageSize = DBParams.SGBDPageSize;
-        this.CompteurPageAlloue = 0;
     }
-    public static DiskManager getInstance(String fileName, int pageSize) {
-        if (instance == null) {
-            instance = new DiskManager(fileName, pageSize);
-        }
+
+    public static DiskManager getInstance() {
         return instance;
     }
-    /**
-     * @return
-     * @throws IOException
-     */
-    
-    public PageId AllocPage() throws IOException {
-        if (!PagesDesallouees.empty()) {
-            // S'il y a des pages désallouées disponibles, utilisez-en une
-            PageId PageDesallouee = PagesDesallouees.pop();
-            CompteurPageAlloue++;
-            return PageDesallouee;
-        }
 
-        // trouver l'indice du ficher le plus leger
-        int legerFileId = -1; // Initialisez-le à -1 pour gérer le cas où aucun fichier n'est encore créé
-        long tailleMin = Long.MAX_VALUE; // Initialisation avec une valeur maximale
-    
-        for (int i = 0; i < DBParams.DMFileCount; i++) {
-            File file = dataFiles[i];
-    
-            // Si le fichier n'existe pas encore, c'est le plus léger
-            if (!file.exists()) {
-                legerFileId = i;
-                break;
-            }
-    
-            long tailleFichier = file.length();
-            if (tailleFichier < tailleMin) {
-                legerFileId = i;
-                tailleMin = tailleFichier;
-            }
-        }
-    
-        if (legerFileId == -1) {
-            // Aucun fichier n'est encore créé, utilisez le premier
-            legerFileId = 0;
-        }
-        File newFile = dataFiles[legerFileId];
-    
-        // Créez un nouveau fichier et augmentez la taille du fichier pour ajouter une page
-        RandomAccessFile raf = new RandomAccessFile(newFile, "rw");
-        raf.seek(newFile.length());
-        raf.write(new byte[pageSize]); // Remplissez avec des octets nuls
-        raf.close();
-    
-        CompteurPageAlloue++; // est ce qu'il serait preferable de l'ajouter dans la classPageId ?? pour savoir le nb de fois qu'on a eu acces a une page 
-    
-        // Créez un PageId pour la nouvelle page
-        return new PageId(legerFileId, (int) (newFile.length() / DBParams.SGBDPageSize) - 1);
-    }
-    
-    /**
-     * @param pageId
-     * @param buff
-     * @param exception
-     * @throws IOException
-     */
-    
-    public void ReadPage(PageId pageId, byte[] buff, IOException exception) throws IOException {
-        long offset = (long) pageId.getPageIdx() * pageSize;
-        RandomAccessFile file = new RandomAccessFile(fileName, "r");
-        file.seek(offset);
-        int bytesRead = file.read(buff);
-        if (bytesRead < pageSize) {
-            file.close();
-            throw new IOException("Lecture incomplète de la page");
+    // une stack pour gérer les pages désallouées
+    private Stack<PageId> deallocatedPages = new Stack<PageId>();
 
-         }
-        file.close();
-    }
+    // allocatedPagesCount devrait être dans la classe PageId en tant que static
+    // attribut
+    private int allocatedPagesCount = 0;
 
-        
-    public void WritePage(PageId pageId, byte[] buff) throws IOException {
-        long offset = (long) pageId.getPageIdx() * pageSize;
-        RandomAccessFile file = null;
-    
-        try {
-            file = new RandomAccessFile(fileName, "rw");
-            file.seek(offset);
-            file.write(buff);
-        } finally {
-            if (file != null) {
-                file.close();
-            }
-        }
-    }
+    private String fileExtension = ".data"; // à mettre dans la classe DBParams
 
-    public void DeallocPage(PageId pageId) throws IOException {
-        if (pageId == null) {
-            throw new IllegalArgumentException("PageId ne peut pas être nul.");
+    public PageId allocPage() throws IOException {
+        allocatedPagesCount++; // le cpt de pages allouées est incrémenté dès qu'on fait appel à cette méthode
+        PageId newPageId; // le PageId de la page nouvellement allouée qui sera retourné par la méthode
+        File file; // cet objet sera utilisé plusieurs fois dans cette méthode
+        // lister tous les noms des fichiers qui sont dans le répertoire DB
+        file = new File(DBParams.DBPath);
+        String[] fileNames = file.list();
+        // création d'un tableau qui contient la taille des fichiers du répertoire DB
+        long[] fileSizes = new long[DBParams.DMFileCount]; // tableau de long initialisé à 0
+        for (int i = 0; i < fileNames.length; i++) {
+            int j = Integer.parseInt(fileNames[i].replaceAll("[^0-9]", ""));
+            file = new File(DBParams.DBPath + fileNames[i]);
+            fileSizes[j] = file.length();
         }
-    
-        if (!isPageAllocated(pageId)) {
-            throw new IllegalArgumentException("La page n'est pas allouée.");
-        }
-    
-        // Générer le nom du fichier à partir de l'index du fichier
-        String fileName = DBParams.DBPath + "/file" + pageId.toString();
-    
-        // Marquez la page comme désallouée
-        File pageFile = new File(fileName);
-        if (pageFile.exists() && pageFile.delete()) {
-            PagesDesallouees.push(pageId);
-            CompteurPageAlloue--; // Décrémentez le compteur après la désallocation
+        // implémentation de l'algorithme d'allocation de pages
+        if (!deallocatedPages.isEmpty()) {
+            // Si une page désallouée précédemment est disponible, l’utiliser
+            newPageId = deallocatedPages.pop();
+            return newPageId;
         } else {
-            throw new IOException("Erreur lors de la désallocation de la page.");
+            // trouver l'indice du fichier le plus léger
+            int lightestFileIndex = 0; // variable qui contient l'indice du fichier le plus léger
+            for (int i = 0; i < fileSizes.length; i++) {
+                if (fileSizes[i] < fileSizes[lightestFileIndex]) {
+                    lightestFileIndex = i;
+                }
+            }
+            String path = DBParams.DBPath + "F" + lightestFileIndex + fileExtension;
+            // création du fichier ou modification d'un fichier existant
+            if (fileSizes[lightestFileIndex] == 0L) {
+                // si la taille du fichier est 0, le fichier n'existe pas, il faut le créer puis
+                // faire l'allocation de la page
+                try {
+                    // création d'un nouveau fichier
+                    File newFile = new File(path);
+                    if (newFile.createNewFile()) {
+                        System.out.println("Fichier créée : " + newFile.getName());
+                    } else {
+                        System.out.println("Fichier existe déjà : " + newFile.getName());
+                    }
+                    // allocation de la page dans le nouveau fichier créée
+                    // FileIdx = indice du fichier et PageIdx = 0 car le fichier vient d'être créée
+                    newPageId = new PageId(lightestFileIndex, 0);
+                    RandomAccessFile raf = new RandomAccessFile(path, "rw");
+                    // rajouter pageSize octets, avec une valeur quelconque, à la fin du fichier
+                    raf.seek(raf.length());
+                    Random rd = new Random();
+                    byte[] randomByteArray = new byte[DBParams.SGBDPageSize];
+                    rd.nextBytes(randomByteArray);
+                    raf.write(randomByteArray);
+                    raf.close();
+                    return newPageId;
+                } catch (IOException e) {
+                    System.out.println("Erreur lors de la création du fichier");
+                    e.printStackTrace();
+                    newPageId = new PageId(-1, -1);
+                    return newPageId;
+                }
+            } else {
+                // sinon modifier un fichier existant (le plus léger) en allounat une page
+                // PageIdx = taille du fichier / taille d'une page
+                int pageIndex = (int) fileSizes[lightestFileIndex] / DBParams.SGBDPageSize;
+                newPageId = new PageId(lightestFileIndex, pageIndex);
+                RandomAccessFile raf = new RandomAccessFile(path, "rw");
+                raf.seek(raf.length());
+                Random rd = new Random();
+                byte[] randomByteArray = new byte[DBParams.SGBDPageSize];
+                rd.nextBytes(randomByteArray);
+                raf.write(randomByteArray);
+                raf.close();
+                return newPageId;
+            }
         }
     }
-    
-    public boolean isPageAllocated(PageId pageId) {
-        // Générer le nom du fichier à partir de l'index du fichier
-        String fileName = DBParams.DBPath + "/file" + pageId.getFileIdx();
-    
-        File pageFile = new File(fileName);
-        return pageFile.exists() && pageFile.length() == pageSize;
+
+    public void readPage(PageId pageId, byte[] buff) throws IOException {
+        String path = DBParams.DBPath + "F" + pageId.getFileIdx() + fileExtension;
+        int offset = pageId.getPageIdx() * DBParams.SGBDPageSize;
+        try {
+            RandomAccessFile raf = new RandomAccessFile(path, "r");
+            raf.read(buff, offset, DBParams.SGBDPageSize);
+            raf.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
-    
-    
-    public int GetCurrentCountAllocPages(){
-        return CompteurPageAlloue;
+
+    public void writePage(PageId pageId, byte[] buff) throws IOException {
+        String path = DBParams.DBPath + "F" + pageId.getFileIdx() + fileExtension;
+        int offset = pageId.getPageIdx() * DBParams.SGBDPageSize;
+        try {
+            RandomAccessFile raf = new RandomAccessFile(path, "rw");
+            raf.write(buff, offset, buff.length);
+            raf.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
+
+    public void deallocPage(PageId pageId) {
+        deallocatedPages.push(pageId);
+    }
+
+    public int getCurrentCountAllocPages() {
+        return allocatedPagesCount;
+    }
+
+    
 
 }
