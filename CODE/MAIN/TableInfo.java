@@ -9,10 +9,13 @@ public class TableInfo {
     int nbrColumns;
     List<ColInfo> columnInfo;
 
+    private PageId headerPageId; // Nouvelle variable membre
+
     public TableInfo(String tableName, int nbrColumns, List<String> colNames, List<String> colTypes) {
         this.tableName = tableName;
         this.nbrColumns = nbrColumns;
         this.columnInfo = new ArrayList<>();
+        this.headerPageId = headerPageId; // Initialisation de la nouvelle variable
 
 
         // Vérification que le nombre de colonnes et la longueur des listes correspondent
@@ -29,6 +32,11 @@ public class TableInfo {
 
     public List<ColInfo> getColumnInfo() {
         return columnInfo;
+    }
+
+
+    public PageId getHeaderPageId() {
+        return new PageId(-1, 0);
     }
     
 }

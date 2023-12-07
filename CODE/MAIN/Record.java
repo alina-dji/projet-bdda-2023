@@ -8,6 +8,7 @@ import java.util.List;
 public class Record {
     private TableInfo tabInfo; // Relation à laquelle appartient le record
     private List<String> recValues; // Valeurs du record (sous forme de chaînes de caractères)
+    private RecordId recordId;  // Nouvelle variable membre
 
     public Record(TableInfo tabInfo) {
         this.tabInfo = tabInfo;
@@ -147,5 +148,12 @@ public class Record {
         return totalBytesRead;
     }
 
+    public void setRecordId(RecordId recordId) {
+        this.recordId = recordId;
+    }
 
+    public RecordId getRecordId() {
+        return recordId;
+    }
+    
 }

@@ -28,4 +28,12 @@ public class PageId {
         System.out.println("On compare"+this+"avec"+ NouvelPage);
         return FileIdx == NouvelPage.FileIdx && PageIdx == NouvelPage.PageIdx;
     }
+
+    public static int getSizeInBytes() {
+        // Vous pouvez ajuster la taille en fonction de la représentation de votre classe
+        return Integer.BYTES * 2; // Supposons que FileIdx et PageIdx sont des entiers
+    }
+    public boolean isNull() {
+        return false;
+    }
 }
