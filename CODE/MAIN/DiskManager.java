@@ -27,6 +27,7 @@ public class DiskManager {
     private String fileExtension = ".data"; // à mettre dans la classe DBParams
 
     public PageId allocPage() throws IOException {
+        
         allocatedPagesCount++; // le cpt de pages allouées est incrémenté dès qu'on fait appel à cette méthode
         PageId newPageId; // le PageId de la page nouvellement allouée qui sera retourné par la méthode
         File file; // cet objet sera utilisé plusieurs fois dans cette méthode

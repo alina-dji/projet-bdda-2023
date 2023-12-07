@@ -7,7 +7,6 @@ public class BufferManager {
     private List<Frame> buffer;
     private static BufferManager instance;
     private DiskManager diskManager;
-    // ... autres attributs
 
     public BufferManager() {
         buffer = new ArrayList<>(DBParams.frameCount);
@@ -43,7 +42,7 @@ public class BufferManager {
     }
 
     // Méthode pour libérer une page
-    public void FreePage(PageId pageId, int valdirty) {
+    public void freePage(PageId pageId, boolean valdirty) {
         Frame frame = findFrame(pageId);
 
         if (frame != null) {
@@ -51,9 +50,7 @@ public class BufferManager {
 
 
             // Actualiser le flag dirty si nécessaire
-            if (valdirty == 1) {
-                frame.dirty = true;
-            }
+            frame.dirty = valdirty;
         }
     }
 
@@ -72,7 +69,7 @@ public class BufferManager {
     }
 
     // Autres méthodes privées utiles
-    private Frame findFrame(PageId pageId) {
+    public Frame findFrame(PageId pageId) {
         for (Frame frame : buffer) {
             if (frame.pageId != null && frame.pageId.equals(pageId)) {
                 return frame;
@@ -116,6 +113,24 @@ public class BufferManager {
             diskManager.writePage(pageId, buff);
         } catch (IOException e) {
             System.err.println("Erreur lors de l'écriture de la page sur le disque : " + e.getMessage());
+        }
+    }
+
+    public void buffPoolContenu() {
+        System.out.println("Contenu du tampon:");
+
+        for (int i = 0; i < buffer.size(); i++) {
+            Frame frame = buffer.get(i);
+            PageId pageId = frame.pageId;
+            boolean isDirty = frame.dirty;
+            int pinCount = frame.pinCount;
+            int accessCount = frame.accessCount;
+
+            System.out.println("Frame " + i + ":");
+            System.out.println("  PageId: " + (pageId != null ? pageId.toString() : "null"));
+            System.out.println("  Dirty: " + isDirty);
+            System.out.println("  PinCount: " + pinCount);
+            System.out.println("  AccessCount: " + accessCount);
         }
     }
 

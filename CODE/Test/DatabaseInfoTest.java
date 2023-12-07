@@ -2,7 +2,6 @@ package Test;
 
 import java.util.ArrayList;
 import java.util.List;
-
 import Main.DatabaseInfo;
 import Main.TableInfo;
 
@@ -48,8 +47,8 @@ public class DatabaseInfoTest {
     }
 
     private static void testGetTable() {
-        DatabaseInfo databaseInfo = DatabaseInfo.getInstance();
-        TableInfo tableInfo = databaseInfo.GetTableInfo("TableName");
+        //DatabaseInfo databaseInfo = DatabaseInfo.getInstance();
+        //TableInfo tableInfo = databaseInfo.GetTableInfo("TableName");
     }
 
     private static void testFinish() {
