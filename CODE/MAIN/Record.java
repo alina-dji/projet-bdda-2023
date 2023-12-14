@@ -156,4 +156,36 @@ public class Record {
         return recordId;
     }
     
+    public int recordSizeFromValues() {
+        int totalSize = 0;
+        List<ColInfo> colInfoList = tabInfo.getColumnInfo();
+    
+        for (int i = 0; i < recValues.size(); i++) {
+            String value = recValues.get(i);
+            ColInfo colInfo = colInfoList.get(i);
+    
+            switch (colInfo.getType()) {
+                case INT:
+                    totalSize += Integer.BYTES;
+                    break;
+    
+                case FLOAT:
+                    totalSize += Float.BYTES;
+                    break;
+    
+                case STRING_VAR:
+                    totalSize += Integer.BYTES + value.getBytes(StandardCharsets.UTF_8).length;
+                    break;
+    
+                case VARSTRING_VAR:
+                    totalSize += Integer.BYTES + value.getBytes(StandardCharsets.UTF_8).length;
+                    break;
+    
+                default:
+                    throw new IllegalArgumentException("Type de colonne non géré : " + colInfo.getType());
+            }
+        }
+    
+        return totalSize;
+    }
 }
