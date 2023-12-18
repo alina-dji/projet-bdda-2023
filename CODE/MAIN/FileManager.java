@@ -5,237 +5,209 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 public class FileManager {
-    private static FileManager instance;
+    private static FileManager leFileManager;
 
     private FileManager() {
-        /*  Empêcher l'instanciation directe de la classe FileManager
-        utilisée pour mettre en œuvre le modèle de conception singleton */
+        // Concept singleton : empêcher l'instanciation directe de la classe FileManager
     }
 
     public static FileManager getInstance() {
-        if (instance == null) {
-            instance = new FileManager();
+        if (leFileManager == null) {
+            leFileManager = new FileManager();
         }
-        return instance;
+        return leFileManager;
     }
 
     public PageId createNewHeaderPage() throws IOException {
-        // Utiliser AllocPage du DiskManager pour allouer une nouvelle page
-        PageId headerPageId = DiskManager.getInstance().allocPage();
-
-        // Récupérer la page via le BufferManager pour pouvoir l'écrire
-        byte[] headerPageData = BufferManager.getInstance().getPage(headerPageId);
-
-        // Écrire deux PageIds factices dans la page
-        PageId emptyListPageId = new PageId(-1, 0);  // PageId factice pour une liste vide
-        writePageIdToBuffer(headerPageData, 0, emptyListPageId);  // Premier PageId
-        writePageIdToBuffer(headerPageData, PageId.getSizeInBytes(), emptyListPageId);  // Deuxième PageId
-
-        // Libérer la page auprès du BufferManager avec le flag dirty
-        BufferManager.getInstance().freePage(headerPageId, true);
+        PageId headerPageId = DiskManager.getInstance().allocPage(); // Utiliser AllocPage du DiskManager pour allouer
+                                                                     // une nouvelle page
+        ByteBuffer headerPageData = BufferManager.getInstance().getPage(headerPageId); // Récupérer la page via le
+                                                                                       // BufferManager pour pouvoir
+                                                                                       // l'écrire
+        headerPageData.putInt(0, -1); // Premier PageId
+        headerPageData.putInt(PageId.getSizeInBytes(), 0); // Deuxième PageId
+        BufferManager.getInstance().freePage(headerPageId, true); // Libérer la page auprès du BufferManager avec le
+                                                                  // flag dirty
 
         return headerPageId;
     }
 
-    private void writePageIdToBuffer(byte[] buffer, int offset, PageId pageId) {
-        ByteBuffer byteBuffer = ByteBuffer.wrap(buffer, offset, PageId.getSizeInBytes());
-        byteBuffer.putInt(pageId.getFileIdx());
-        byteBuffer.putInt(pageId.getPageIdx());
-    }
-
     public PageId addDataPage(TableInfo tabInfo) throws IOException {
-        // Allocation d'une nouvelle page via AllocPage du DiskManager
-        PageId newDataPageId = DiskManager.getInstance().allocPage();
+        PageId newDataPageId = DiskManager.getInstance().allocPage(); // Allocation d'une nouvelle page via AllocPage du
+                                                                      // DiskManager
+        ByteBuffer newDataPageData = BufferManager.getInstance().getPage(newDataPageId); // Récupération du buffer de la
+                                                                                         // nouvelle page via le
+                                                                                         // BufferManager
 
-        // Récupération du buffer de la nouvelle page via le BufferManager
-        byte[] newDataPageData = BufferManager.getInstance().getPage(newDataPageId);
+        /* DATA PAGE */
+        DataPage.writeNextPageId(newDataPageData, newDataPageId); // Écrire l'identifiant de la page suivante au début
+                                                                  // (octet 0), sinon PageId factice pour une liste vide
+        BufferManager.getInstance().freePage(newDataPageId, true);// Libération de la page Data auprès du BufferManager
+                                                                  // avec le bon flag dirty
 
-        // TODO : Chaîner la page dans la liste des pages "où il reste de la place"
-        // Vous devez lire et écrire des PageIds dans la nouvelle page et éventuellement dans d'autres pages selon votre stratégie
+        /* CHAÎNAGE DE PAGES */
+        PageId headerPageId = tabInfo.getHeaderPageId();// Récupération de l'identifiant de la Header Page de la
+                                                        // relation
+        ByteBuffer headerPageData = BufferManager.getInstance().getPage(headerPageId); // Récupération du buffer de la
+                                                                                       // Header Page via le
+                                                                                       // BufferManager
 
-        // Libération de la page auprès du BufferManager avec le bon flag dirty
-        BufferManager.getInstance().freePage(newDataPageId, true);
+        PageId freeListPageId = DataPage.readNextPageId(headerPageData); // Lire l'identifiant de la première page de la
+                                                                         // liste "où il reste de la place"
+        DataPage.writeNextPageId(headerPageData, newDataPageId); // Écrire l'identifiant de la nouvelle Data Page à la
+                                                                 // première position de la liste
+        DataPage.writeNextPageId(newDataPageData, freeListPageId); // Écrire l'ancien identifiant de la première page de
+                                                                   // la liste à la suite de la nouvelle Data Page
 
+        BufferManager.getInstance().freePage(headerPageId, true); // Libération de la page Header auprès du
+                                                                  // BufferManager avec le bon flag dirty
         return newDataPageId;
     }
 
     public PageId getFreeDataPageId(TableInfo tabInfo, int sizeRecord) throws IOException {
-        // Récupérer l'identifiant de la Header Page de la relation
         PageId headerPageId = tabInfo.getHeaderPageId();
+        ByteBuffer headerPageData = BufferManager.getInstance().getPage(headerPageId);
 
-        // Récupérer la page via le BufferManager
-        byte[] headerPageData = BufferManager.getInstance().getPage(headerPageId);
+        PageId currentPageId = DataPage.readNextPageId(headerPageData); // Récupérer l'identifiant de la première page
+                                                                        // de données
 
-        // Lire les PageIds des listes "où il reste de la place" et "pages pleines" depuis la Header Page
-        PageId freeListPageId = readPageIdFromBuffer(headerPageData, 0);
-        PageId fullListPageId = readPageIdFromBuffer(headerPageData, PageId.getSizeInBytes());
+        while (!currentPageId.isNull()) {
+            ByteBuffer currentPageData = BufferManager.getInstance().getPage(currentPageId);
 
-        // Parcourir la liste "où il reste de la place"
-        while (!freeListPageId.isNull()) {
-            // Récupérer la page via le BufferManager
-            byte[] freeListPageData = BufferManager.getInstance().getPage(freeListPageId);
+            int freeSpace = DataPage.readSpaceStart(currentPageData) + sizeRecord; // Calculer l'espace libre dans la
+                                                                                   // page en ajoutant la taille de
+                                                                                   // l'enregistrement
+            for (int i = 0; i < DataPage.readNumEntries(currentPageData); i++) { // Parcourir le slot directory pour
+                                                                                 // vérifier chaque enregistrement
+                int entryStart = DataPage.SLOT_DIR_ENTRIES_START + i * DataPage.SLOT_DIR_ENTRY_SIZE;
+                int recordStart = DataPage.readSlotEntryStart(currentPageData, entryStart);
+                int recordSize = DataPage.readSlotEntrySize(currentPageData, entryStart);
 
-            // TODO : Vérifier s'il y a suffisamment d'espace sur cette page pour insérer le record
-            // Vous devrez lire le slot directory de la page pour obtenir des informations sur l'espace libre
+                if (recordSize == 0) { // Si l'enregistrement a été supprimé
+                    freeSpace += sizeRecord; // Alore augmenter l'espace libre
+                    break;
+                }
 
-            // Si l'espace est suffisant, libérer la page auprès du BufferManager et la retourner
-            if (isSpaceAvailable(freeListPageData, sizeRecord)) {
-                BufferManager.getInstance().freePage(freeListPageId, false); // false car la page n'est pas modifiée
-                return freeListPageId;
+                if (i < DataPage.readNumEntries(currentPageData) - 1) {
+                    int nextRecordStart = DataPage.readSlotEntryStart(currentPageData,
+                            entryStart + DataPage.SLOT_DIR_ENTRY_SIZE);
+                    int spaceBetweenRecords = nextRecordStart - (recordStart + recordSize);
+                    freeSpace += spaceBetweenRecords; // Calculer l'espace entre les enregistrements
+                }
             }
-
-            // Passer à la page suivante dans la liste
-            freeListPageId = readPageIdFromBuffer(freeListPageData, 0);
+            if (freeSpace >= sizeRecord) { // Vérifier s'il y a suffisamment d'espace libre pour insérer
+                                           // l'enregistrement
+                return currentPageId;
+            }
+            currentPageId = DataPage.readNextPageId(currentPageData); // Passer à la page suivante dans la liste
         }
-
-        // Si aucune page n'a suffisamment d'espace, retourner null
-        return null;
-    }
-
-    private boolean isSpaceAvailable(byte[] pageData, int sizeRecord) {
-        // TODO : Implémenter la logique pour vérifier si la page a suffisamment d'espace pour le record
-        // Vous devrez lire le slot directory de la page pour obtenir des informations sur l'espace libre
-        return true; // Placeholder, ajustez selon votre implémentation
-    }
-
-    private PageId readPageIdFromBuffer(byte[] buffer, int offset) {
-        ByteBuffer byteBuffer = ByteBuffer.wrap(buffer, offset, PageId.getSizeInBytes());
-        int fileIdx = byteBuffer.getInt();
-        int pageIdx = byteBuffer.getInt();
-        return new PageId(fileIdx, pageIdx);
+        return null; // Aucune page avec suffisamment d'espace libre n'a été trouvée
     }
 
     public RecordId writeRecordToDataPage(Record record, PageId pageId) throws IOException {
-        // Récupérer le buffer de la page de données via le BufferManager
-        byte[] dataPageData = BufferManager.getInstance().getPage(pageId);
+        ByteBuffer dataPageBuffer = BufferManager.getInstance().getPage(pageId); // Récupérer le buffer de la page de
+                                                                                 // données
+        int spaceStart = DataPage.readSpaceStart(dataPageBuffer); // Lire la position à partir de laquelle commence
+                                                                  // l'espace libre
 
-        // Créer un ByteBuffer à partir des données de la page de données
-        ByteBuffer dataPageBuffer = ByteBuffer.wrap(dataPageData);
+        int recordSize = record.writeToBuffer(dataPageBuffer, DataPage.DATA_PAGE_RECORDS_START + spaceStart); // Écrire
+                                                                                                              // l'enregistrement
+                                                                                                              // dans le
+                                                                                                              // buffer
+                                                                                                              // de la
+                                                                                                              // page de
+                                                                                                              // données
+        spaceStart += recordSize; // Mettre à jour la position de début de l'espace libre dans le slot directory
+        DataPage.writeSpaceStart(dataPageBuffer, spaceStart);
+        int numEntries = DataPage.readNumEntries(dataPageBuffer) + 1; // Mettre à jour le nombre d'entrées dans le slot
+                                                                      // directory
+        DataPage.writeNumEntries(dataPageBuffer, numEntries);
 
-        // Trouver l'indice du prochain slot disponible
-    int nextSlotIdx = dataPageBuffer.getInt(DBParams.SGBDPageSize - 8);
+        int entryStart = DataPage.SLOT_DIR_ENTRIES_START + (numEntries - 1) * DataPage.SLOT_DIR_ENTRY_SIZE; // Écrire la
+                                                                                                            // nouvelle
+                                                                                                            // entrée
+                                                                                                            // dans le
+                                                                                                            // slot
+                                                                                                            // directory
+        DataPage.writeSlotEntry(dataPageBuffer, entryStart, spaceStart - recordSize, recordSize);
 
-        // Écrire l'enregistrement dans la page de données
-        record.writeToBuffer(dataPageBuffer, 0); // A reverifier en cas d'erreur (l'offset)
+        BufferManager.getInstance().freePage(pageId, true); // Libérer la page auprès du BufferManager avec le flag
+                                                            // dirty
 
-        // Libérer la page auprès du BufferManager avec le bon flag dirty
-        BufferManager.getInstance().freePage(pageId, true);
-
-
-
-        // Retourner l'identifiant du record
-        return new RecordId(pageId, nextSlotIdx);
+        return new RecordId(pageId, numEntries - 1);
     }
 
-     public ArrayList<Record> getRecordsInDataPage(TableInfo tabInfo, PageId pageId) throws IOException {
-        // Récupérer le buffer de la page de données via le BufferManager
-        byte[] dataPageData = BufferManager.getInstance().getPage(pageId);
+    public ArrayList<Record> getRecordsInDataPage(TableInfo tabInfo, PageId pageId) throws IOException {
+        ByteBuffer dataPageBuffer = BufferManager.getInstance().getPage(pageId); // Récupérer le buffer de la page de
+                                                                                 // données
+        ArrayList<Record> records = new ArrayList<>(); // Utilisation explicite d'ArrayList
 
-        // Créer un ByteBuffer à partir des données de la page de données
-        ByteBuffer dataPageBuffer = ByteBuffer.wrap(dataPageData);
+        try {
+            int numEntries = DataPage.readNumEntries(dataPageBuffer);
 
-        // Trouver le nombre de slots dans la page
-        int numSlots = dataPageBuffer.getInt(DBParams.SGBDPageSize - 8);
+            for (int i = 0; i < numEntries; i++) {
+                int entryStart = DataPage.SLOT_DIR_ENTRIES_START + i * DataPage.SLOT_DIR_ENTRY_SIZE;
+                int recordStart = DataPage.readSlotEntryStart(dataPageBuffer, entryStart);
+                int recordSize = DataPage.readSlotEntrySize(dataPageBuffer, entryStart);
 
-        // Liste pour stocker les records
-        ArrayList<Record> recordsList = new ArrayList<>();
+                ByteBuffer recordBuffer = ByteBuffer.allocate(recordSize);
+                dataPageBuffer.position(recordStart);
+                dataPageBuffer.get(recordBuffer.array(), 0, recordSize);
 
-        // Parcourir tous les slots et lire les records
-        for (int i = 0; i < numSlots; i++) {
-            // Lire la position du début du record depuis le slot directory
-            int slotIdx = i * 8;
-            int recordStartPos = dataPageBuffer.getInt(DBParams.SGBDPageSize - 8 - slotIdx);
-
-            // Créer un nouveau record et le lire depuis la page de données
-            Record record = new Record(tabInfo);
-            record.readFromBuffer(dataPageBuffer, recordStartPos);
-
-            // Ajouter le record à la liste
-            recordsList.add(record);
-
-
+                Record record = new Record(tabInfo);
+                record.readFromBuffer(recordBuffer, 0);
+                records.add(record);
+            }
+        } finally {
+            BufferManager.getInstance().freePage(pageId, false); // Libérer la page après lecture
         }
 
-                    // Libérer la page auprès du BufferManager
-            BufferManager.getInstance().freePage(pageId, false);
-
-            return recordsList;
-        
+        return records;
     }
 
     public ArrayList<PageId> getDataPages(TableInfo tabInfo) throws IOException {
-        // Récupérer le PageId de la Header Page de la relation
-        PageId headerPageId = tabInfo.getHeaderPageId();
+        ByteBuffer headerPageBuffer = BufferManager.getInstance().getPage(tabInfo.getHeaderPageId());
+        try {
+            ArrayList<PageId> dataPages = new ArrayList<>();
 
-        // Récupérer le buffer de la Header Page via le BufferManager
-        byte[] headerPageData = BufferManager.getInstance().getPage(headerPageId);
+            // Lire le PageId de la liste des pages où il « reste de la place »
+            PageId availablePageId = DataPage.readNextPageId(headerPageBuffer);
+            if (!availablePageId.isNull()) {
+                dataPages.add(availablePageId);
+            }
 
-        // Créer un ByteBuffer à partir des données de la Header Page
-        ByteBuffer headerPageBuffer = ByteBuffer.wrap(headerPageData);
-
-        // Lire le nombre de pages de données depuis la Header Page
-        int numDataPages = headerPageBuffer.getInt(0);
-
-        // Liste pour stocker les PageIds des pages de données
-        ArrayList<PageId> dataPagesList = new ArrayList<>();
-
-        // Parcourir les entrées de la Header Page et ajouter les PageIds à la liste
-        for (int i = 0; i < numDataPages; i++) {
-            // Lire le PageId de la i-ème page de données
-            PageId dataPageId = readPageIdFromBuffer(headerPageBuffer, 4 + i * PageId.getSizeInBytes());
-
-            // Ajouter le PageId à la liste
-            dataPagesList.add(dataPageId);
+            // Lire le PageId de la liste des pages pleines
+            PageId fullPageId = DataPage.readNextPageId(headerPageBuffer);
+            if (!fullPageId.isNull()) {
+                dataPages.add(fullPageId);
+            }
+            return dataPages;
+        } finally {
+            BufferManager.getInstance().freePage(tabInfo.getHeaderPageId(), false); // Libérer la page après lecture
         }
-
-        // Libérer la Header Page auprès du BufferManager
-        BufferManager.getInstance().freePage(headerPageId, false);
-
-        return dataPagesList;
     }
-
-    // Méthode utilitaire pour lire un PageId depuis un ByteBuffer
-    private PageId readPageIdFromBuffer(ByteBuffer buffer, int offset) {
-        int fileIdx = buffer.getInt(offset);
-        int pageIdx = buffer.getInt(offset + Integer.BYTES);
-        return new PageId(fileIdx, pageIdx);
-    }
-
-
 
     public RecordId insertRecordIntoTable(Record record) throws IOException {
-        
-        // Obtenez l'identifiant de la page de données libre
-        PageId freeDataPageId = getFreeDataPageId(record.getTableInfo(), record.recordSizeFromValues());
-
-        // Écrivez l'enregistrement dans la page de données
-        RecordId recordId = writeRecordToDataPage(record, freeDataPageId);
-
-        // Associez l'identifiant de l'enregistrement à l'enregistrement lui-même
-        record.setRecordId(recordId);
+        PageId freeDataPageId = getFreeDataPageId(record.getTableInfo(), record.getSize());// Obtenez l'identifiant de
+                                                                                           // la page de données libre
+        RecordId recordId = writeRecordToDataPage(record, freeDataPageId); // Écrivez l'enregistrement dans la page de
+                                                                           // données
+        record.setRecordId(recordId);// Associez l'identifiant de l'enregistrement à l'enregistrement lui-même
 
         return recordId;
     }
 
     public ArrayList<Record> getAllRecords(TableInfo tabInfo) throws IOException {
-        // Récupérer la liste des PageIds des pages de données pour la relation
-        ArrayList<PageId> dataPagesList = getDataPages(tabInfo);
+        ArrayList<PageId> dataPagesList = getDataPages(tabInfo); // Récupérer la liste des PageIds des pages de données
+                                                                 // pour la relation
+        ArrayList<Record> allRecordsList = new ArrayList<>(); // Liste pour stocker tous les records de la relation
 
-        // Liste pour stocker tous les records de la relation
-        ArrayList<Record> allRecordsList = new ArrayList<>();
-
-        // Parcourir les pages de données pour récupérer tous les records
-        for (PageId dataPageId : dataPagesList) {
+        for (PageId dataPageId : dataPagesList) { // Parcourir les pages de données pour récupérer tous les records
             // Récupérer la liste des records dans la page de données
             ArrayList<Record> recordsInDataPage = getRecordsInDataPage(tabInfo, dataPageId);
-
-            // Ajouter les records à la liste générale
-            allRecordsList.addAll(recordsInDataPage);
+            allRecordsList.addAll(recordsInDataPage); // Ajouter les records à la liste générale
         }
-
         return allRecordsList;
     }
-
-
 
 }
