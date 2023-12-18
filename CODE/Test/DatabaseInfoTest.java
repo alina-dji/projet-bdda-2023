@@ -3,10 +3,11 @@ package Test;
 import java.util.ArrayList;
 import java.util.List;
 import Main.DatabaseInfo;
+import Main.PageId;
 import Main.TableInfo;
 
 public class DatabaseInfoTest {
-    
+
     public static void main(String[] args) {
         // Test de l'initialisation
         testInit();
@@ -16,7 +17,7 @@ public class DatabaseInfoTest {
 
         // Test de la récupération d'une table
         testGetTable();
-        
+
         // Test de la sauvegarde
         testFinish();
     }
@@ -26,7 +27,7 @@ public class DatabaseInfoTest {
         databaseInfo.Init();
     }
 
-     private static void testAddTable() {
+    private static void testAddTable() {
         DatabaseInfo databaseInfo = DatabaseInfo.getInstance();
 
         // Création des listes de noms et types de colonnes
@@ -39,16 +40,19 @@ public class DatabaseInfoTest {
         colTypes.add("ColumnType1");
         colTypes.add("ColumnType2");
 
-        // Création d'une nouvelle instance de TableInfo
-        TableInfo tableInfo = new TableInfo("TableName", 2, colNames, colTypes);
+        // Création d'une nouvelle instance de PageId pour simuler le headerPageId
+        PageId headerPageId = new PageId(-1, 0);
+
+        // Création d'une nouvelle instance de TableInfo avec le headerPageId
+        TableInfo tableInfo = new TableInfo("TableName", 2, colNames, colTypes, headerPageId);
 
         // Ajout de la table à la base de données
         databaseInfo.AddTableInfo(tableInfo);
     }
 
     private static void testGetTable() {
-        //DatabaseInfo databaseInfo = DatabaseInfo.getInstance();
-        //TableInfo tableInfo = databaseInfo.GetTableInfo("TableName");
+        // DatabaseInfo databaseInfo = DatabaseInfo.getInstance();
+        // TableInfo tableInfo = databaseInfo.GetTableInfo("TableName");
     }
 
     private static void testFinish() {
