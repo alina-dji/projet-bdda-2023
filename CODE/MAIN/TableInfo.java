@@ -9,16 +9,17 @@ public class TableInfo {
     int nbrColumns;
     List<ColInfo> columnInfo;
 
-    private PageId headerPageId; // Nouvelle variable membre
+    PageId headerPageId; // Nouvelle variable membre
 
-    public TableInfo(String tableName, int nbrColumns, List<String> colNames, List<String> colTypes) {
+    public TableInfo(String tableName, int nbrColumns, List<String> colNames, List<String> colTypes,
+            PageId headerPageId) {
         this.tableName = tableName;
         this.nbrColumns = nbrColumns;
         this.columnInfo = new ArrayList<>();
         this.headerPageId = headerPageId; // Initialisation de la nouvelle variable
 
-
-        // Vérification que le nombre de colonnes et la longueur des listes correspondent
+        // Vérification que le nombre de colonnes et la longueur des listes
+        // correspondent
         if (nbrColumns == colNames.size() && nbrColumns == colTypes.size()) {
             for (int i = 0; i < nbrColumns; i++) {
                 ColInfo colInfo = new ColInfo(colNames.get(i), colTypes.get(i));
@@ -29,17 +30,12 @@ public class TableInfo {
         }
     }
 
-
     public List<ColInfo> getColumnInfo() {
         return columnInfo;
     }
 
-
     public PageId getHeaderPageId() {
         return new PageId(-1, 0);
     }
-    
+
 }
-
-
-
